@@ -31,6 +31,85 @@ export const listTags = query({
   },
 });
 
+export const updateTagColor = mutation({
+  args: {
+    tagId: v.id("tags"),
+    color: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.tagId, { color: args.color || undefined });
+  },
+});
+
+export const renameTag = mutation({
+  args: {
+    tagId: v.id("tags"),
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const normalizedName = args.name.toLowerCase().trim();
+
+    const existing = await ctx.db
+      .query("tags")
+      .withIndex("by_name", (q) => q.eq("name", normalizedName))
+      .first();
+
+    if (existing && existing._id !== args.tagId) {
+      throw new Error("TAG_NAME_EXISTS");
+    }
+
+    await ctx.db.patch(args.tagId, { name: normalizedName });
+  },
+});
+
+export const mergeTags = mutation({
+  args: {
+    sourceTagId: v.id("tags"),
+    targetTagId: v.id("tags"),
+  },
+  handler: async (ctx, args) => {
+    const sourceLinks = await ctx.db
+      .query("fileTags")
+      .withIndex("by_tag", (q) => q.eq("tagId", args.sourceTagId))
+      .collect();
+
+    for (const link of sourceLinks) {
+      const existingLink = await ctx.db
+        .query("fileTags")
+        .withIndex("by_file", (q) => q.eq("fileId", link.fileId))
+        .filter((q) => q.eq(q.field("tagId"), args.targetTagId))
+        .first();
+
+      if (!existingLink) {
+        await ctx.db.insert("fileTags", {
+          fileId: link.fileId,
+          tagId: args.targetTagId,
+        });
+      }
+
+      await ctx.db.delete(link._id);
+    }
+
+    await ctx.db.delete(args.sourceTagId);
+  },
+});
+
+export const deleteTag = mutation({
+  args: { tagId: v.id("tags") },
+  handler: async (ctx, args) => {
+    const links = await ctx.db
+      .query("fileTags")
+      .withIndex("by_tag", (q) => q.eq("tagId", args.tagId))
+      .collect();
+
+    for (const link of links) {
+      await ctx.db.delete(link._id);
+    }
+
+    await ctx.db.delete(args.tagId);
+  },
+});
+
 export const linkFileTag = mutation({
   args: {
     fileId: v.id("files"),
@@ -123,5 +202,16 @@ export const bulkLinkFileTags = mutation({
         await ctx.db.insert("fileTags", { fileId: args.fileId, tagId: tag._id });
       }
     }
+  },
+});
+
+export const getTagFileCount = query({
+  args: { tagId: v.id("tags") },
+  handler: async (ctx, args) => {
+    const links = await ctx.db
+      .query("fileTags")
+      .withIndex("by_tag", (q) => q.eq("tagId", args.tagId))
+      .collect();
+    return links.length;
   },
 });

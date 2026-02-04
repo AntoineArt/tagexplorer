@@ -1,9 +1,11 @@
 import { useState, useCallback, useRef } from "react";
 import { useMutation, useAction, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { Id } from "../../convex/_generated/dataModel";
 import { DropZone } from "./dropZone";
 import { TagChip } from "./tagChip";
 import { TagInput } from "./tagInput";
+import { trackAnalysis } from "./aiCostIndicator";
 
 interface PendingFile {
   file: File;
@@ -87,6 +89,7 @@ export function UploadSidebar() {
       });
 
       const allSuggested = [...analysis.existingTags, ...analysis.newTags];
+      trackAnalysis();
       setPendingFile({
         file,
         preview,
@@ -147,9 +150,10 @@ export function UploadSidebar() {
     try {
       const fileName = pendingFile.customName ?? pendingFile.suggestedName ?? pendingFile.file.name;
       const fileId = await saveFile({
-        storageId: pendingFile.storageId as `_storage/${string}`,
+        storageId: pendingFile.storageId as Id<"_storage">,
         name: fileName,
         type: pendingFile.file.type,
+        size: pendingFile.file.size,
       });
 
       await bulkLinkFileTags({
